@@ -1,0 +1,88 @@
+*&---------------------------------------------------------------------*
+*& Report  Z_MSEG_ALV_REPORT
+*& Status: alv_status (SE41)
+*& Purpose: Major Project - ALV Grid with Excel Export Only
+*&---------------------------------------------------------------------*
+REPORT z_mseg_alv_report.
+
+TABLES: mseg.
+
+* 1. Data Structure for MSEG
+TYPES: BEGIN OF ty_mseg,
+         mblnr TYPE mseg-mblnr, " Material Document
+         mjahr TYPE mseg-mjahr, " Year
+         zeile TYPE mseg-zeile, " Item
+         matnr TYPE mseg-matnr, " Material
+         werks TYPE mseg-werks, " Plant
+         menge TYPE mseg-menge, " Quantity
+         meins TYPE mseg-meins, " Unit
+       END OF ty_mseg.
+
+DATA: it_mseg TYPE TABLE OF ty_mseg.
+
+* 2. Selection Screen
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_mblnr FOR mseg-mblnr.
+SELECTION-SCREEN END OF BLOCK b1.
+
+START-OF-SELECTION.
+  SELECT mblnr mjahr zeile matnr werks menge meins
+    FROM mseg INTO TABLE it_mseg UP TO 100 ROWS
+    WHERE mblnr IN s_mblnr.
+
+  IF it_mseg IS NOT INITIAL.
+    PERFORM display_alv.
+  ELSE.
+    MESSAGE 'No records found.' TYPE 'I'.
+  ENDIF.
+
+* 3. Display ALV Subroutine
+FORM display_alv.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      i_callback_pf_status_set = 'SET_STATUS'
+      i_callback_user_command  = 'USER_COMMAND'
+      i_structure_name         = 'MSEG'
+
+    TABLES
+      t_outtab                 = it_mseg.
+ENDFORM.
+
+* 4. Link to SE41 (Matches your 'alv_status' exactly)
+FORM set_status USING rt_extab TYPE slis_t_extab.
+  SET PF-STATUS 'ALV_STATUS'.
+ENDFORM.
+
+* 5. User Command Logic (Excel Download Only)
+FORM user_command USING r_ucomm LIKE sy-ucomm
+                        rs_selfield TYPE slis_selfield.
+  CASE r_ucomm.
+    " --- Action: Export to Excel ---
+    WHEN '&EXCEL'.
+      DATA: lv_filename TYPE string, lv_path TYPE string, lv_fullpath TYPE string.
+      DATA: lv_title TYPE string.
+
+      cl_gui_frontend_services=>file_save_dialog(
+        EXPORTING default_extension = 'xls'
+        CHANGING  filename = lv_filename
+                  path     = lv_path
+                  fullpath = lv_fullpath ).
+
+      IF lv_fullpath IS NOT INITIAL.
+        CALL FUNCTION 'GUI_DOWNLOAD'
+          EXPORTING
+            filename              = lv_fullpath
+            write_field_separator = 'X'
+          TABLES
+            data_tab              = it_mseg.
+
+        IF sy-subrc = 0.
+          MESSAGE 'Excel Downloaded Successfully!' TYPE 'S'.
+        ENDIF.
+      ENDIF.
+
+    WHEN 'BACK' OR 'EXIT' OR 'CANC'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDFORM.
